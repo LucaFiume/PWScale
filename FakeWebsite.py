@@ -1,4 +1,5 @@
 from Tester import Tester
+import pandas as pd
 
 class UserInterface:
     def __init__(self):
@@ -25,5 +26,6 @@ class FakeWebsite:
 
         print('TEST')
         self.Tester.test_core()
+        self.Tester.results.to_excel('./Results/PWScale Results ' + self.name + '.xlsx', index=False, float_format="%.3f")
 
 FakeWebsite()

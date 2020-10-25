@@ -16,6 +16,8 @@ class Tester:
         self.P = Scale(self.P_questions, batch=batch)
         self.W = Scale(self.W_questions, batch=batch)
 
+        self.results = pd.DataFrame(columns=['Question Number', 'Question', 'Type', 'Lower Bound', 'Higher Bound', 'Answer', 'P Score after', 'W Score after'])
+
     def self_assessment(self):
         """This function starts with the self-assessment part of the test, updating the user's P/W scores accordingly"""
         for i in range(len(self.SA_questions)):
@@ -31,8 +33,15 @@ class Tester:
 
             if scale == 'P':
                 self.P.update_score(answer, weight, lowbound, highbound)
+                type = 'SA - P'
             else:
                 self.W.update_score(answer, weight, lowbound, highbound)
+                type = 'SA - W'
+
+            self.results = self.results.append(
+                {'Question Number': len(self.results) + 1, 'Question': question, 'Type': type, 'Lower Bound': lowbound,
+                 'Higher Bound': highbound, 'Answer': np.linspace(lowbound, highbound, 5)[answer], 'P Score after': self.P.score,
+                 'W Score after': self.W.score}, ignore_index=True)
 
     def test_core(self):
         for i, isP in enumerate([True, False] * self.numQs):
@@ -41,11 +50,18 @@ class Tester:
                 question, weight, lowbound, highbound = self.P.question_info(next)
                 answer = self.user_interface.ask(question)
                 self.P.update_score(answer, weight, lowbound, highbound)
+                type = 'P'
             else:
                 next = self.W.next_question()
                 question, weight, lowbound, highbound = self.W.question_info(next)
                 answer = self.user_interface.ask(question)
                 self.W.update_score(answer, weight, lowbound, highbound)
+                type = 'W'
+
+            self.results = self.results.append(
+                {'Question Number': len(self.results) + 1, 'Question': question, 'Type': type, 'Lower Bound': lowbound,
+                 'Higher Bound': highbound, 'Answer': np.linspace(lowbound, highbound, 5)[answer], 'P Score after': self.P.score,
+                 'W Score after': self.W.score}, ignore_index=True)
 
         self.user_interface.report(self.P.score, self.W.score)
 
