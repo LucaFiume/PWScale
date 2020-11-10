@@ -1,5 +1,7 @@
 from Tester import Tester
 import pandas as pd
+from Visualizations import PWScalePlotter
+import matplotlib.pyplot as plt
 
 class UserInterface:
     def __init__(self):
@@ -27,5 +29,9 @@ class FakeWebsite:
         print('TEST')
         self.Tester.test_core()
         self.Tester.results.to_excel('./Results/PWScale Results ' + self.name + '.xlsx', index=False, float_format="%.3f")
+        self.P = self.Tester.P
+        self.W = self.Tester.W
 
-FakeWebsite()
+f = FakeWebsite()
+PWScalePlotter(f.P, f.W).plot_history()
+plt.show()

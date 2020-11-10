@@ -5,7 +5,7 @@ class Tester:
     def __init__(self, user_interface, numQs=5, batch=1, loadQs=True):
         self.user_interface = user_interface #User interface to invoke in order to ask questions
         self.batch = batch #This number specifies the number of questions to be selected at once
-        self.numQs = numQs #Number of questions for P or W
+        self.numQs = numQs #Maximum number of questions for P or W
 
         if loadQs:
             self.qs = pd.ExcelFile('Questions.xlsx')
@@ -43,25 +43,34 @@ class Tester:
                  'Higher Bound': highbound, 'Answer': np.linspace(lowbound, highbound, 5)[answer], 'P Score after': self.P.score,
                  'W Score after': self.W.score}, ignore_index=True)
 
-    def test_core(self):
+    def test_core(self, check_convergence=10):
+        """Dynamic part of the test. check_convergence indicates after which question should convergence be checked"""
         for i, isP in enumerate([True, False] * self.numQs):
             if isP:
-                next = self.P.next_question()
-                question, weight, lowbound, highbound = self.P.question_info(next)
-                answer = self.user_interface.ask(question)
-                self.P.update_score(answer, weight, lowbound, highbound)
-                type = 'P'
-            else:
-                next = self.W.next_question()
-                question, weight, lowbound, highbound = self.W.question_info(next)
-                answer = self.user_interface.ask(question)
-                self.W.update_score(answer, weight, lowbound, highbound)
-                type = 'W'
+                if not self.P.converged:
+                    next = self.P.next_question()
+                    question, weight, lowbound, highbound = self.P.question_info(next)
+                    answer = self.user_interface.ask(question)
+                    self.P.update_score(answer, weight, lowbound, highbound)
 
-            self.results = self.results.append(
-                {'Question Number': len(self.results) + 1, 'Question': question, 'Type': type, 'Lower Bound': lowbound,
-                 'Higher Bound': highbound, 'Answer': np.linspace(lowbound, highbound, 5)[answer], 'P Score after': self.P.score,
-                 'W Score after': self.W.score}, ignore_index=True)
+                    if i > check_convergence:
+                        self.P.check_convergence()
+                    type = 'P'
+            else:
+                if not self.W.converged:
+                    next = self.W.next_question()
+                    question, weight, lowbound, highbound = self.W.question_info(next)
+                    answer = self.user_interface.ask(question)
+                    self.W.update_score(answer, weight, lowbound, highbound)
+                    if i > check_convergence:
+                        self.W.check_convergence()
+                    type = 'W'
+
+            if not(self.W.converged) or not(self.P.converged):
+                self.results = self.results.append(
+                    {'Question Number': len(self.results) + 1, 'Question': question, 'Type': type, 'Lower Bound': lowbound,
+                     'Higher Bound': highbound, 'Answer': np.linspace(lowbound, highbound, 5)[answer], 'P Score after': self.P.score,
+                     'W Score after': self.W.score}, ignore_index=True)
 
         self.user_interface.report(self.P.score, self.W.score)
 
@@ -86,6 +95,8 @@ class Scale:
         self.history = []
         # Waiting list of questions to be asked next
         self.next = []
+        #Boolean indicating if the scale value has converged to a particular value
+        self.converged = False
 
     def update_score(self, answer, weight, lowbound, highbound):
         """This generic function is in charge of updating the user's current P or W score, taking into account all previous
@@ -128,3 +139,18 @@ class Scale:
         highbound = self.questions.loc[qid]['Very Comfortable']
         self.answered.append(qid)
         return question, weight, lowbound, highbound
+
+    def check_convergence(self, tolerance=0.1, relative=False):
+        """This function checks the history of scale values, and based on the two last values, establishes whether the
+        evolution of the scale value converges to a particular value. For the input:
+        tolerance: Float representing the tolerance to be surpassed between adjacent scores to establish convergence
+        relative: Boolean establishing whether the tolerance is computed as a percentage of the first value in the sequence
+        or as an absolute value."""
+        if len(self.history) > 1:
+            if relative:
+                dev = abs(self.history[-1] - self.history[-2]) / abs(self.history[-2])
+            else:
+                dev = abs(self.history[-1] - self.history[-2])
+
+            if dev > tolerance:
+                self.converged = True
