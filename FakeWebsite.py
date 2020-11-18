@@ -9,7 +9,15 @@ class UserInterface:
 
     def ask(self, question):
         print(f'Question #{self.q}: ' + question)
-        answer = input(' Enter 0, 1, 2, 3, or 4: \n')
+        valid = False
+        while not valid:
+            answer = input(' Enter 0, 1, 2, 3, or 4: \n')
+            try:
+                t = int(answer)
+                if t in [0, 1, 2, 3, 4]:
+                    valid = True
+            except:
+                valid = False
         self.q += 1
         return int(answer)
 

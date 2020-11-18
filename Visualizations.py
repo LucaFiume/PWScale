@@ -15,16 +15,29 @@ class PWScalePlotter:
 
         color = 'tab:red'
         ax.set_ylabel('P Scale [-]', fontsize=20, color=color)
-        ax.set_ylim(1, 4)
+        ax.set_ylim(-110, 110)
         ax.tick_params(axis='y', labelsize=18, labelcolor=color)
-        ax.plot(self.P.history, marker='o', color=color)
-        ax.plot(self.P.history, color=color)
+        ax.plot(np.arange(len(self.P.history)) + 1, self.P.history, marker='o', color=color, label=None)
+        ax.plot(np.arange(len(self.P.history)) + 1, self.P.history, color=color, label=None)
 
         ax2 = ax.twinx()
         color = 'tab:blue'
         ax2.set_ylabel('W Scale [-]', fontsize=20, color=color)
-        ax2.set_ylim(1, 4)
+        ax2.set_ylim(-110, 110)
         ax2.tick_params(axis='y', labelsize=18, labelcolor=color)
-        ax2.plot(self.W.history, marker='o', color=color)
-        ax2.plot(self.W.history, color=color)
+        ax2.plot(np.arange(len(self.W.history)) + 1, self.W.history, marker='o', color=color)
+        ax2.plot(np.arange(len(self.W.history)) + 1, self.W.history, color=color)
 
+        legempty = True
+        critNames = ['Average Score Converged', 'Deviation from Score is Small', 'Std Deviation is Equal to that of Self-Assessment']
+        scNames = ['P', 'W']
+        for j, scale in enumerate([self.P, self.W]):
+            for i, n in enumerate(critNames):
+                if scale.criteria[i] > 0:
+                    x = scale.criteria[i] * np.ones((50, 1))
+                    y = np.linspace(-110, 100, 50)
+                    ax.plot(x, y, label=scNames[j] + ' - ' + n)
+                    legempty = False
+
+        if not legempty:
+            ax.legend(fontsize=18)

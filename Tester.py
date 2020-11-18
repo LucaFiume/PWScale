@@ -2,10 +2,11 @@ import numpy as np
 import pandas as pd
 
 class Tester:
-    def __init__(self, user_interface, numQs=5, batch=1, loadQs=True):
+    def __init__(self, user_interface, numQs=15, batch=1, loadQs=True, bounds=[-100, 100]):
         self.user_interface = user_interface #User interface to invoke in order to ask questions
         self.batch = batch #This number specifies the number of questions to be selected at once
         self.numQs = numQs #Maximum number of questions for P or W
+        self.mapper = Mapper(backBounds=bounds) #Mapper object translating between the backend scale [-100, 100] and the frontend scale [1,4]
 
         if loadQs:
             self.qs = pd.ExcelFile('Questions.xlsx')
@@ -13,10 +14,19 @@ class Tester:
             self.P_questions = pd.read_excel(self.qs, 'P', index_col=0) #Dataframe with P-related questions
             self.W_questions = pd.read_excel(self.qs, 'W', index_col=0) #Dataframe with W-related questions
 
-        self.P = Scale(self.P_questions, batch=batch)
-        self.W = Scale(self.W_questions, batch=batch)
+            #Check scales in which these questions work and switch them to the backend scale
+            for questions in [self.SA_questions, self.P_questions, self.W_questions]:
+                for field in ['Suited for', 'Very Uncomfortable', 'Very Comfortable']:
+                    scale = self.mapper.which_scale(questions[field])
+                    if scale == 1:
+                        transformed = self.mapper.front_to_back(questions[field])
+                        questions[field] = transformed
+
+        self.P = Scale(self.P_questions, batch=batch, bounds=bounds, battery=len(self.SA_questions))
+        self.W = Scale(self.W_questions, batch=batch, bounds=bounds, battery=len(self.SA_questions))
 
         self.results = pd.DataFrame(columns=['Question Number', 'Question', 'Type', 'Lower Bound', 'Higher Bound', 'Answer', 'P Score after', 'W Score after'])
+
 
     def self_assessment(self):
         """This function starts with the self-assessment part of the test, updating the user's P/W scores accordingly"""
@@ -42,8 +52,8 @@ class Tester:
 
             self.results = self.results.append(
                 {'Question Number': len(self.results) + 1, 'Question': question, 'Type': type, 'Lower Bound': lowbound,
-                 'Higher Bound': highbound, 'Answer': np.linspace(lowbound, highbound, 5)[answer], 'P Score after': self.P.score,
-                 'W Score after': self.W.score}, ignore_index=True)
+                 'Higher Bound': highbound, 'Answer': np.linspace(lowbound, highbound, 5)[answer], 'P Score after': self.mapper.back_to_front(self.P.score),
+                 'W Score after': self.mapper.back_to_front(self.W.score)}, ignore_index=True)
 
     def test_core(self, check_convergence=10):
         """Dynamic part of the test. check_convergence indicates after which question should convergence be checked"""
@@ -71,10 +81,10 @@ class Tester:
             if not(self.W.converged) or not(self.P.converged):
                 self.results = self.results.append(
                     {'Question Number': len(self.results) + 1, 'Question': question, 'Type': type, 'Lower Bound': lowbound,
-                     'Higher Bound': highbound, 'Answer': np.linspace(lowbound, highbound, 5)[answer], 'P Score after': self.P.score,
-                     'W Score after': self.W.score}, ignore_index=True)
+                     'Higher Bound': highbound, 'Answer': np.linspace(lowbound, highbound, 5)[answer], 'P Score after': self.mapper.back_to_front(self.P.score),
+                     'W Score after': self.mapper.back_to_front(self.W.score)}, ignore_index=True)
 
-        self.user_interface.report(self.P.score, self.W.score)
+        self.user_interface.report(self.mapper.back_to_front(self.P.score), self.mapper.back_to_front(self.W.score))
 
 
 class Scale:
@@ -103,6 +113,8 @@ class Scale:
         self.bounds = bounds
         #Length of initial battery of questions
         self.battery = battery
+        #Fulfillment of criteria
+        self.criteria = [0, 0, 0]
 
     def update_score(self, answer, weight, lowbound, highbound):
         """This generic function is in charge of updating the user's current P or W score, taking into account all previous
@@ -160,6 +172,10 @@ class Scale:
         if score_converged and delta_mean_converged and delta_std_converged:
             self.converged = True
 
+        for i, crit in enumerate([score_converged, delta_mean_converged, delta_std_converged]):
+            if crit and self.criteria[i] == 0:
+                self.criteria[i] = len(self.history)
+
     def check_score_convergence(self, tolerance=0.1, relative=False):
         """This function checks the history of scale values, and based on the two last values, establishes whether the
         evolution of the scale value has converged to a particular value. For the input:
@@ -174,7 +190,7 @@ class Scale:
             else:
                 dev = abs(self.history[-1] - self.history[-2])
 
-            if dev > tolerance:
+            if dev < tolerance:
                 score_converged = True
         return score_converged
 
@@ -186,7 +202,7 @@ class Scale:
         delta_mean_converged = False
         if len(self.history) > 1:
             dev = abs(self.answers[-1] - self.history[-2])
-            if dev > delta:
+            if dev < delta:
                 delta_mean_converged = True
         return delta_mean_converged
 
@@ -200,7 +216,7 @@ class Scale:
             stdSA = np.std(self.answers[:self.battery])
             stdAfter = np.std(self.answers[self.battery:])
             dev = abs(stdSA - stdAfter)
-            if dev > delta:
+            if dev < delta:
                 delta_std_converged = True
         return delta_std_converged
 
@@ -233,26 +249,26 @@ class Mapper:
 
     def back_to_front(self, x):
         """Here, values in x, expressed in the backend scale, are converted to the frontend scale."""
+        x = round(x, 5)
         try:
             #x is an iterable
             if max(x) > self.backBounds[1] or min(x) < self.backBounds[0]:
                 print("ERROR: Values to be converted to the frontend scale are beyond the backend scale's bounds")
 
             y = x * self.b2f['Slope'] + self.b2f['Add']
-            clamped = np.zeros((len(y), 1))
-            for i ,v in enumerate(y):
-                closest = np.argmin(abs(self.frontValues - v))
-                clamped[i] = self.frontValues[closest]
+            for i in range(len(y)):
+                closest = np.argmin(abs(self.frontValues - y[i]))
+                y[i] = self.frontValues[closest]
         except:
             # x is not an iterable
-            if x <= self.backBounds[1] and x >= self.backBounds[0]:
+            if x > self.backBounds[1] or x < self.backBounds[0]:
                 print("ERROR: Values to be converted to the frontend scale are beyond the backend scale's bounds")
 
             y = x * self.b2f['Slope'] + self.b2f['Add']
             closest = np.argmin(abs(self.frontValues - y))
-            clamped = self.frontValues[closest]
+            y = self.frontValues[closest]
 
-        return clamped
+        return y
 
     def which_scale(self, x):
         """This function makes uses of the bounds of each scale in order to state if the values of x belong to the
@@ -266,22 +282,43 @@ class Mapper:
         try:
             top = max(x)
             low = min(x)
+
+            if low < np.max([self.backBounds[0], self.frontBounds[0]]):
+                left_says = left_widest
+            else:
+                left_says = left_tightest
+            if top > np.min([self.backBounds[1], self.frontBounds[1]]):
+                right_says = right_widest
+            else:
+                right_says = right_tightest
+
+            if right_says == left_says:
+                scale = right_says
+            else:
+                print('ERROR: Values to be detected are ambiguous')
+                scale = None
         except:
-            top = x
-            low = x
+            if x < np.max([self.backBounds[0], self.frontBounds[0]]):
+                left_says = left_widest
+            else:
+                left_says = None
 
-        if low < np.max([self.backBounds[0], self.frontBounds[0]]):
-            left_says = left_widest
-        else:
-            left_says = left_tightest
-        if top > np.min([self.backBounds[1], self.frontBounds[1]]):
-            right_says = right_widest
-        else:
-            right_says = right_tightest
+            if x > np.min([self.backBounds[1], self.frontBounds[1]]):
+                right_says = right_widest
+            else:
+                right_says = None
 
-        if right_says == left_says:
-            scale = right_says
-        else:
-            print('ERROR: Values to be detected are ambiguous')
-            scale = None
+            if left_says is None:
+                if right_says is None:
+                    print('ERROR: Values to be detected are ambiguous')
+                    scale = None
+                else:
+                    scale = right_says
+            else:
+                if right_says is not None:
+                    print('ERROR: Values to be detected are ambiguous')
+                    scale = None
+                else:
+                    scale = left_says
+
         return scale
