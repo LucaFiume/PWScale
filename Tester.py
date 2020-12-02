@@ -2,17 +2,23 @@ import numpy as np
 import pandas as pd
 
 class Tester:
-    def __init__(self, user_interface, numQs=15, batch=1, loadQs=True, bounds=[-100, 100]):
-        self.user_interface = user_interface #User interface to invoke in order to ask questions
+    def __init__(self, numQs=15, batch=1, loadQs=True, bounds=[-100, 100], storeResults=True):
+        # self.user_interface = user_interface #User interface to invoke in order to ask questions
         self.batch = batch #This number specifies the number of questions to be selected at once
         self.numQs = numQs #Maximum number of questions for P or W
         self.mapper = Mapper(backBounds=bounds) #Mapper object translating between the backend scale [-100, 100] and the frontend scale [1,4]
+        self.storeResults = storeResults #Boolean indicating whether an excel file containing all results must be created
+
+        if self.storeResults:
+            self.results = StoreResults(self.mapper)
+        else:
+            self.results = None
 
         if loadQs:
             self.qs = pd.ExcelFile('Questions.xlsx')
-            self.SA_questions = pd.read_excel(self.qs, 'SA', index_col=0) #Dataframe with Self-assessment questions
-            self.P_questions = pd.read_excel(self.qs, 'P', index_col=0) #Dataframe with P-related questions
-            self.W_questions = pd.read_excel(self.qs, 'W', index_col=0) #Dataframe with W-related questions
+            self.SA_questions = pd.read_excel(self.qs, 'SA') #Dataframe with Self-assessment questions
+            self.P_questions = pd.read_excel(self.qs, 'P') #Dataframe with P-related questions
+            self.W_questions = pd.read_excel(self.qs, 'W') #Dataframe with W-related questions
 
             #Check scales in which these questions work and switch them to the backend scale
             for questions in [self.SA_questions, self.P_questions, self.W_questions]:
@@ -22,16 +28,46 @@ class Tester:
                         transformed = self.mapper.front_to_back(questions[field])
                         questions[field] = transformed
 
-        self.P = Scale(self.P_questions, batch=batch, bounds=bounds, battery=len(self.SA_questions))
-        self.W = Scale(self.W_questions, batch=batch, bounds=bounds, battery=len(self.SA_questions))
+        self.P = Scale(self.P_questions, self.SA_questions, batch=batch, bounds=bounds, battery=len(self.SA_questions), results=self.results)
+        self.W = Scale(self.W_questions, self.SA_questions, batch=batch, bounds=bounds, battery=len(self.SA_questions), results=self.results)
+        self.done = False
 
-        self.results = pd.DataFrame(columns=['Question Number', 'Question', 'Type', 'Lower Bound', 'Higher Bound', 'Answer', 'P Score after', 'W Score after'])
+    def receive(self, answers, toAsk, i=0, check_convergence=10, isSA=False):
+        """This function interprets the user responses, taking as input:
+        answers: List of integers in [0, 1, 2, 3, 4], correspoding to the answers to be analyzed
+        toAsk: List of Question IDs to be analyzed
+        isSA: Boolean indicating if these questions correspond to the SA portion
+        i: Integer corresponding to the number of questions already asked in the dynamic part of the test
+        check_convergence: indicates after which question should convergence be checked"""
 
+        answersP = []
+        answersW = []
+        for j, a in enumerate(answers):
+            if 'P' in toAsk[j]:
+                answersP.append(a)
+            else:
+                answersW.append(a)
 
-    def self_assessment(self):
+        if len(answersP) > 0 and not(self.P.converged):
+            self.P.received = answersP
+            self.P.update_score()
+            if not(isSA) and i > check_convergence:
+                self.P.check_convergence()
+
+        if len(answersW) > 0 and not(self.W.converged):
+            self.W.received = answersW
+            self.W.update_score()
+            if not(isSA) and i > check_convergence:
+                self.W.check_convergence()
+
+        return self.P.score, self.W.score
+
+    def self_assessment_emmit(self):
         """This function starts with the self-assessment part of the test, updating the user's P/W scores accordingly"""
+        toAsk = []
         for i in range(len(self.SA_questions)):
-            question = self.SA_questions.iloc[i]['Question']
+            QID = self.SA_questions.iloc[i]['Question ID']
+            # question = self.SA_questions.iloc[i]['Question']
             scale = self.SA_questions.iloc[i]['P/W']
             weight = self.SA_questions.iloc[i]['Weight']
 
@@ -39,60 +75,58 @@ class Tester:
             lowbound = self.SA_questions.iloc[i]['Very Uncomfortable']
             highbound = self.SA_questions.iloc[i]['Very Comfortable']
 
-            # The user interface now asks the user the question, and returns the value between lowbound and highbound
-            # corresponding to the user's answer
-            answer = self.user_interface.ask(question)
-
             if scale == 'P':
-                self.P.update_score(answer, weight, lowbound, highbound)
-                type = 'SA - P'
+                self.P.update_sent(QID, weight, lowbound, highbound)
             else:
-                self.W.update_score(answer, weight, lowbound, highbound)
-                type = 'SA - W'
+                self.W.update_sent(QID, weight, lowbound, highbound)
 
-            self.results = self.results.append(
-                {'Question Number': len(self.results) + 1, 'Question': question, 'Type': type, 'Lower Bound': lowbound,
-                 'Higher Bound': highbound, 'Answer': np.linspace(lowbound, highbound, 5)[answer], 'P Score after': self.mapper.back_to_front(self.P.score),
-                 'W Score after': self.mapper.back_to_front(self.W.score)}, ignore_index=True)
+            toAsk.append(QID)
 
-    def test_core(self, check_convergence=10):
-        """Dynamic part of the test. check_convergence indicates after which question should convergence be checked"""
-        for i, isP in enumerate([True, False] * self.numQs):
-            if isP:
-                if not self.P.converged:
-                    next = self.P.next_question()
-                    question, weight, lowbound, highbound = self.P.question_info(next)
-                    answer = self.user_interface.ask(question)
-                    self.P.update_score(answer, weight, lowbound, highbound)
+        return toAsk, self.done #List of Question IDs to be asked and boolean of test done
 
-                    if i > check_convergence:
-                        self.P.check_convergence()
-                    type = 'P'
+    def test_core_emmit(self, previousType, i=1):
+        """Dynamic part of the test. check_convergence indicates after which question should convergence be checked
+        previousType is a string indicating whether the previously asked question was P or W scale. Can be 'P' or 'W'"""
+
+        toAsk = [] #List of question IDs to be asked next
+
+        if previousType == 'W':
+            previousType = 1
+        else:
+            previousType = 0
+
+        scales = [self.P, self.W]
+        converged = [self.P.converged, self.W.converged]
+
+        if sum(converged) == 2 or i > 2 * self.numQs:
+            self.done = True
+        else:
+            if converged[0] and previousType == 1:
+                scale = scales[1]
+            elif converged[1] and previousType == 0:
+                scale = scales[0]
             else:
-                if not self.W.converged:
-                    next = self.W.next_question()
-                    question, weight, lowbound, highbound = self.W.question_info(next)
-                    answer = self.user_interface.ask(question)
-                    self.W.update_score(answer, weight, lowbound, highbound)
-                    if i > check_convergence:
-                        self.W.check_convergence()
-                    type = 'W'
+                scale = scales[int(not(previousType))]
 
-            if not(self.W.converged) or not(self.P.converged):
-                self.results = self.results.append(
-                    {'Question Number': len(self.results) + 1, 'Question': question, 'Type': type, 'Lower Bound': lowbound,
-                     'Higher Bound': highbound, 'Answer': np.linspace(lowbound, highbound, 5)[answer], 'P Score after': self.mapper.back_to_front(self.P.score),
-                     'W Score after': self.mapper.back_to_front(self.W.score)}, ignore_index=True)
+            next = scale.next_question()
+            QID, question, weight, lowbound, highbound = scale.question_info(next)
 
-        self.user_interface.report(self.mapper.back_to_front(self.P.score), self.mapper.back_to_front(self.W.score))
+            scale.update_sent(QID, weight, lowbound, highbound)
+            toAsk.append(QID)
+
+        return toAsk, self.done
+
+
 
 
 class Scale:
     """This simple class is made to store the information regarding each of the two scales in an efficient way, no need
     to repeat the same code for each scale"""
-    def __init__(self, questions, batch=1, bounds=[-100, 100], battery=10):
+    def __init__(self, questions, SA, batch=1, bounds=[-100, 100], battery=10, results=None):
         #Dataframe of questions relative to the scale
         self.questions = questions
+        # Dataframe of questions relative to the SA part of the test
+        self.SA_questions = SA
         #Number of questions to be asked at once
         self.batch = batch
         # List of answers, containing the P/W scale value of each answer
@@ -115,8 +149,20 @@ class Scale:
         self.battery = battery
         #Fulfillment of criteria
         self.criteria = [0, 0, 0]
+        #ID of questions corresponding to this scale sent to the front end, awaiting answer
+        self.sent = []
+        #Weights of questions corresponding to this scale sent to the front end, awaiting answer
+        self.sentWeights = []
+        # Lowbounds of questions corresponding to this scale sent to the front end, awaiting answer
+        self.sentLow = []
+        # Highbounds of questions corresponding to this scale sent to the front end, awaiting answer
+        self.sentHigh = []
+        # received is a list of received answers still to be applied to update the final score. Same order as in sent
+        self.received = []
+        #This invokes the class StoreResults, in charge of writing up the results
+        self.results = results
 
-    def update_score(self, answer, weight, lowbound, highbound):
+    def update_score(self):
         """This generic function is in charge of updating the user's current P or W score, taking into account all previous
         answers and their respective weights.
         answer: integer in [0, 1, 2, 3, 4], representing the user's latest answer
@@ -124,26 +170,56 @@ class Scale:
         lowbound: Scale value of the answer corresponding to a 0
         highbound: Scale value of the answer corresponding to a 4"""
 
-        answer = np.linspace(lowbound, highbound, 5)[answer]
-        result = 0
-        self.answers.append(answer)
-        self.weights.append(weight)
-        for i, ans in enumerate(self.answers):
-            result += ans * self.weights[i]
-        result = result / sum(self.weights)
-        self.score = result
-        self.history.append(result)
+        for i, answer in enumerate(self.received):
+            lowbound = self.sentLow[i]
+            highbound = self.sentHigh[i]
+            weight = self.sentWeights[i]
+            answer = np.linspace(lowbound, highbound, 5)[answer]
+            self.answers.append(answer)
+            self.weights.append(weight)
+
+            result = 0
+            for j, ans in enumerate(self.answers):
+                result += ans * self.weights[j]
+            result = result / sum(self.weights)
+            self.score = result
+            self.history.append(result)
+
+            if self.results is not None:
+                sent = self.sent[i]
+
+                if 'SA' in sent:
+                    question = self.SA_questions.loc[self.SA_questions['Question ID'] == sent, ['Question']].values[0][0]
+                else:
+                    question = self.questions.loc[self.questions['Question ID'] == sent, ['Question']].values[0][0]
+                if 'P' in sent:
+                    type = 'P'
+                else:
+                    type = 'Q'
+
+                self.results.newLine(sent, question, lowbound, highbound, type, answer, self.score)
+
+        #Reset all communication buffers to be empty
+        self.sent = []
+        self.sentWeights = []
+        self.sentLow = []
+        self.sentHigh = []
+        self.received = []
+
 
     def next_question(self):
         """This function finds the question most suited for the current score"""
         if len(self.next) == 0:
-            adequacy = self.questions['Suited for'].drop(self.answered)
+            mask = self.questions['Question ID'].isin(self.answered)
+            mask = [not(m) for m in mask]
+            adequacy = self.questions.loc[mask]['Suited for']
             ranking = np.argsort(np.abs(adequacy.values - self.score))
+            QIDs = self.questions.loc[mask]['Question ID']
 
             if len(ranking) > self.batch:
-                self.next = list(adequacy.index[ranking[0:self.batch]].values)
+                self.next = list(QIDs.iloc[ranking[0:self.batch]].values)
             elif len(ranking) > 0:
-                self.next = list(adequacy.index[ranking].values)
+                self.next = list(QIDs.iloc[ranking].values)
             else:
                 print('ERROR: No questions remain.')
                 self.converged = True
@@ -151,16 +227,17 @@ class Scale:
 
         next = self.next[0] #Immediately next question
         self.next.pop(0)
-        return next
+        return next #this is a question ID
 
-    def question_info(self, qid):
-        """This function returns the question info associated with the question ID in qid"""
-        question = self.questions.loc[qid]['Question']
-        weight = self.questions.loc[qid]['Weight']
-        lowbound = self.questions.loc[qid]['Very Uncomfortable']
-        highbound = self.questions.loc[qid]['Very Comfortable']
-        self.answered.append(qid)
-        return question, weight, lowbound, highbound
+    def question_info(self, QID):
+        """This function returns the question info associated with the question ID in QID"""
+        mask = self.questions['Question ID'] == QID
+        question = self.questions.loc[mask, ['Question']].values[0][0]
+        weight = self.questions.loc[mask, ['Weight']].values[0][0]
+        lowbound = self.questions.loc[mask, ['Very Uncomfortable']].values[0][0]
+        highbound = self.questions.loc[mask, ['Very Comfortable']].values[0][0]
+        self.answered.append(QID)
+        return QID, question, weight, lowbound, highbound
 
     def check_convergence(self, tol=100, deltaMu=50, deltaSigma=50):
         """Here, the three existing convergence criteria are checked at the same time, with the three tolerance parameters
@@ -219,6 +296,14 @@ class Scale:
             if dev < delta:
                 delta_std_converged = True
         return delta_std_converged
+
+    def update_sent(self, QID, weight, lowbound, highbound):
+        """This function simply updates all the 'sent' attributes of the class"""
+        self.sent.append(QID)
+        self.sentWeights.append(weight)
+        self.sentLow.append(lowbound)
+        self.sentHigh.append(highbound)
+
 
 class Mapper:
     def __init__(self, frontBounds=[1,4], frontValues=7, backBounds=[-100, 100]):
@@ -322,3 +407,37 @@ class Mapper:
                     scale = left_says
 
         return scale
+
+
+class StoreResults:
+    def __init__(self, mapper):
+        """This class takes care of storing results in a dataframe appropriately"""
+        self.results = pd.DataFrame(
+            columns=['Question Number', 'QID', 'Question', 'Type', 'Lower Bound', 'Higher Bound', 'Answer', 'P Score after',
+                     'W Score after'])
+        self.mapper = mapper
+
+    def newLine(self, QID, question, lowbound, highbound, type, answer, score):
+        if type == 'P':
+            scoreP = score
+            if len(self.results) > 0:
+                scoreW = self.results.iloc[-1]['W Score after']
+                scoreW = self.mapper.front_to_back(scoreW)
+            else:
+                scoreW = 0
+        else:
+            scoreW = score
+            if len(self.results) > 0:
+                scoreP = self.results.iloc[-1]['P Score after']
+                scoreP = self.mapper.front_to_back(scoreP)
+            else:
+                scoreP = 0
+
+        self.results = self.results.append(
+            {'Question Number': len(self.results) + 1, 'QID': QID, 'Question': question, 'Type': type, 'Lower Bound': lowbound,
+             'Higher Bound': highbound, 'Answer': self.mapper.back_to_front(answer),
+             'P Score after': self.mapper.back_to_front(scoreP),
+             'W Score after': self.mapper.back_to_front(scoreW)}, ignore_index=True)
+
+    def save(self, name, dir='./Results/PWScale Results '):
+        self.results.to_excel(dir + name + '.xlsx', index=False, float_format="%.3f")
