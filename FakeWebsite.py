@@ -45,25 +45,32 @@ class FakeWebsite: #This class should be the one calling the asker function
 
         self.Tester = Tester()
 
+        # CONNECTION WITH THE BACKEND: Extract questions to be asked
         print('INITIAL SELF-ASSESSMENT')
         toAsk, _ = self.Tester.self_assessment_emmit()
 
+        # CONNECTION WITH FRONTEND: toAsk is a list of Question IDs to be asked
         questions = self.get_questions(toAsk)
         answers = Asker.ask(questions)
 
+        # CONNECTION WITH THE BACKEND: answers is a list of integers in [0, 1, 2, 3, 4]
         P_score, W_score = self.Tester.receive(answers, toAsk, isSA=True)
 
         print('TEST')
         done = False
-        previousType = 'W'
-        i = 1
+        previousType = 'W' #This is used in order to make sure that P and W questions are asked in alternating order
+        i = 1 #This is needed in the backend in order to keep count of the questions
         while not(done):
+            # CONNECTION WITH THE BACKEND: Extract questions to be asked
             toAsk, done = self.Tester.test_core_emmit(previousType, i)
 
+            # CONNECTION WITH FRONTEND: toAsk is a list of Question IDs to be asked, done is a boolean indicating convergence
             if len(toAsk) > 0:
                 previousType = toAsk[-1][0]
                 questions = self.get_questions(toAsk)
                 answers = Asker.ask(questions)
+
+                # CONNECTION WITH THE BACKEND: answers is a list of integers in [0, 1, 2, 3, 4]
                 P_score, W_score = self.Tester.receive(answers, toAsk, i)
                 i += 1
 
