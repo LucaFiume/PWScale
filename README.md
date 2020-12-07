@@ -43,7 +43,7 @@ Three criteria must be fulfilled in order to assume that a particular score has 
 
 3. The standard deviation of the user's answers in the dynamic part of the test must not deviate more than \delta_{\sigma} from the standard deviation of the user's answers in the initial self-assessment of the test.
 
-      ![equation](https://latex.codecogs.com/gif.latex?|\sigma_{SA}&space;-&space;\sigma_{Dymanic}|&space;\delta_{\sigma})
+      ![equation](https://latex.codecogs.com/gif.latex?|\sigma_{SA}&space;-&space;\sigma_{Dymanic}|&space;<&space;\delta_{\sigma})
 
 ## Project Structure
 
