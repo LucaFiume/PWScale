@@ -22,7 +22,7 @@ class Tester:
 
             #Check scales in which these questions work and switch them to the backend scale
             for questions in [self.SA_questions, self.P_questions, self.W_questions]:
-                for field in ['Suited for', 'Very Uncomfortable', 'Very Comfortable']:
+                for field in ['Suited for', 'Strongly Disagree', 'Strongly Agree']:
                     scale = self.mapper.which_scale(questions[field])
                     if scale == 1:
                         transformed = self.mapper.front_to_back(questions[field])
@@ -32,7 +32,7 @@ class Tester:
         self.W = Scale(self.W_questions, self.SA_questions, batch=batch, bounds=bounds, battery=len(self.SA_questions), results=self.results)
         self.done = False
 
-    def receive(self, answers, toAsk, i=0, check_convergence=10, isSA=False):
+    def receive(self, answers, toAsk, i=0, check_convergence=10, isSA=False, isVideo=False):
         """This function interprets the user responses, taking as input:
         answers: List of integers in [0, 1, 2, 3, 4], correspoding to the answers to be analyzed
         toAsk: List of Question IDs to be analyzed
@@ -48,19 +48,30 @@ class Tester:
             else:
                 answersW.append(a)
 
-        if len(answersP) > 0 and not(self.P.converged):
-            self.P.received = answersP
-            self.P.update_score()
-            if not(isSA) and i > check_convergence:
-                self.P.check_convergence()
+        if not(isVideo):
+            if len(answersP) > 0 and not(self.P.converged):
+                self.P.received = answersP
+                self.P.update_score()
+                if not(isSA) and i > check_convergence:
+                    self.P.check_convergence()
 
-        if len(answersW) > 0 and not(self.W.converged):
-            self.W.received = answersW
-            self.W.update_score()
-            if not(isSA) and i > check_convergence:
-                self.W.check_convergence()
+            if len(answersW) > 0 and not(self.W.converged):
+                self.W.received = answersW
+                self.W.update_score()
+                if not(isSA) and i > check_convergence:
+                    self.W.check_convergence()
+        else:
+            if len(answersP) > 0:
+                self.P.received = answersP
+                self.P.update_score()
+            if len(answersW) > 0:
+                self.W.received = answersW
+                self.W.update_score()
 
-        return self.P.score, self.W.score
+        if not(isVideo):
+            return self.P.score, self.W.score
+        else:
+            return self.mapper.back_to_front(self.P.score), self.mapper.back_to_front(self.W.score)
 
     def self_assessment_emmit(self):
         """This function starts with the self-assessment part of the test, updating the user's P/W scores accordingly"""
@@ -72,8 +83,8 @@ class Tester:
             weight = self.SA_questions.iloc[i]['Weight']
 
             #There has to be a coordination between the question database and the class Scale definition. Both have to work with the same scale!
-            lowbound = self.SA_questions.iloc[i]['Very Uncomfortable']
-            highbound = self.SA_questions.iloc[i]['Very Comfortable']
+            lowbound = self.SA_questions.iloc[i]['Strongly Disagree']
+            highbound = self.SA_questions.iloc[i]['Strongly Agree']
 
             if scale == 'P':
                 self.P.update_sent(QID, weight, lowbound, highbound)
@@ -82,7 +93,7 @@ class Tester:
 
             toAsk.append(QID)
 
-        return toAsk, self.done #List of Question IDs to be asked and boolean of test done
+        return toAsk #List of Question IDs to be asked
 
     def test_core_emmit(self, previousType, i=1):
         """Dynamic part of the test. check_convergence indicates after which question should convergence be checked
@@ -109,13 +120,56 @@ class Tester:
                 scale = scales[int(not(previousType))]
 
             next = scale.next_question()
-            QID, question, weight, lowbound, highbound = scale.question_info(next)
-
-            scale.update_sent(QID, weight, lowbound, highbound)
-            toAsk.append(QID)
+            if next is not None:
+                QID, question, weight, lowbound, highbound = scale.question_info(next)
+                scale.update_sent(QID, weight, lowbound, highbound)
+                toAsk.append(QID)
+            else:
+                self.done = True
 
         return toAsk, self.done
 
+    def video_emmit(self, videoWeight=5):
+        """This function emulates what test_core_emmit and self_assessment_emmit do, but instead 'invents' a question ID
+        corresponding to the appropriate end videos corresponding to the user's test score. The user will be shown two videos
+        corresponding to the upper and lower integer values in the scale. If score is 2.5, videos for 2 and 3 will be shown.
+        For the input:
+        videoWeight: This shows the weight associated to the user's answer to the videos shown. Note that this answer
+        will be treated as any other question of the test."""
+
+        scales = [self.P, self.W]
+        toAsk = []
+        checkpoints = self.mapper.front_to_back([i for i in range(1, 5)])
+
+        for i, s in enumerate(scales):
+            base = np.argmin(abs(checkpoints - s.score))
+
+            if s.score > checkpoints[base]:
+                other = checkpoints[base + 1]
+            elif s.score < checkpoints[base]:
+                other = checkpoints[base - 1]
+            else:
+                if base == len(checkpoints):
+                    other = checkpoints[base - 1]
+                else:
+                    other = checkpoints[base + 1]
+
+            base = self.mapper.back_to_front(checkpoints[base])
+            other = self.mapper.back_to_front(other)
+
+            if i == 0:
+                title = 'Video_P_'
+            else:
+                title = 'Video_W'
+
+            QID = title + str(min(other, base)) + '-' + str(max(other, base))
+            weight = videoWeight
+            lowbound = min(other, base)
+            highbound = max(other, base)
+            s.update_sent(QID, weight, lowbound, highbound)
+            toAsk.append(QID)
+
+        return toAsk
 
 
 
@@ -190,8 +244,11 @@ class Scale:
 
                 if 'SA' in sent:
                     question = self.SA_questions.loc[self.SA_questions['Question ID'] == sent, ['Question']].values[0][0]
+                elif 'Video' in sent:
+                    question = sent
                 else:
                     question = self.questions.loc[self.questions['Question ID'] == sent, ['Question']].values[0][0]
+
                 if 'P' in sent:
                     type = 'P'
                 else:
@@ -221,7 +278,7 @@ class Scale:
             elif len(ranking) > 0:
                 self.next = list(QIDs.iloc[ranking].values)
             else:
-                print('ERROR: No questions remain.')
+                # print('ERROR: No questions remain.')
                 self.converged = True
                 self.next = [None]
 
@@ -234,8 +291,8 @@ class Scale:
         mask = self.questions['Question ID'] == QID
         question = self.questions.loc[mask, ['Question']].values[0][0]
         weight = self.questions.loc[mask, ['Weight']].values[0][0]
-        lowbound = self.questions.loc[mask, ['Very Uncomfortable']].values[0][0]
-        highbound = self.questions.loc[mask, ['Very Comfortable']].values[0][0]
+        lowbound = self.questions.loc[mask, ['Strongly Disagree']].values[0][0]
+        highbound = self.questions.loc[mask, ['Strongly Agree']].values[0][0]
         self.answered.append(QID)
         return QID, question, weight, lowbound, highbound
 
@@ -328,8 +385,18 @@ class Mapper:
             # x is not an iterable
             if x > self.frontBounds[1] or x < self.frontBounds[0]:
                 print("ERROR: Values to be converted to the backend scale are beyond the frontend scale's bounds")
+        try:
+            y = x * self.f2b['Slope'] + self.f2b['Add']
+        except:
+            y = np.array(x) * self.f2b['Slope'] + self.f2b['Add']
 
-        y = x * self.f2b['Slope'] + self.f2b['Add']
+        try:
+            y = max(y, self.backBounds[0])
+            y = min(y, self.backBounds[1])
+        except:
+            for i, e in enumerate(y):
+                y[i] = max(min(e, self.backBounds[1]), self.backBounds[0])
+
         return y
 
     def back_to_front(self, x):

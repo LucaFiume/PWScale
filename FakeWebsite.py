@@ -47,14 +47,14 @@ class FakeWebsite: #This class should be the one calling the asker function
 
         # CONNECTION WITH THE BACKEND: Extract questions to be asked
         print('INITIAL SELF-ASSESSMENT')
-        toAsk, _ = self.Tester.self_assessment_emmit()
+        toAsk = self.Tester.self_assessment_emmit()
 
         # CONNECTION WITH FRONTEND: toAsk is a list of Question IDs to be asked
         questions = self.get_questions(toAsk)
         answers = Asker.ask(questions)
 
         # CONNECTION WITH THE BACKEND: answers is a list of integers in [0, 1, 2, 3, 4]
-        P_score, W_score = self.Tester.receive(answers, toAsk, isSA=True)
+        _, _ = self.Tester.receive(answers, toAsk, isSA=True)
 
         print('TEST')
         done = False
@@ -71,8 +71,19 @@ class FakeWebsite: #This class should be the one calling the asker function
                 answers = Asker.ask(questions)
 
                 # CONNECTION WITH THE BACKEND: answers is a list of integers in [0, 1, 2, 3, 4]
-                P_score, W_score = self.Tester.receive(answers, toAsk, i)
+                _, _ = self.Tester.receive(answers, toAsk, i)
                 i += 1
+
+        # CONNECTION WITH THE BACKEND: Extract questions to be asked
+        print('VIDEOS')
+        toAsk = self.Tester.video_emmit()
+
+        # CONNECTION WITH FRONTEND: toAsk is a list of Question IDs to be asked
+        questions = toAsk
+        answers = Asker.ask(questions)
+
+        # CONNECTION WITH THE BACKEND: answers is a list of integers in [0, 1, 2, 3, 4]
+        P_score, W_score = self.Tester.receive(answers, toAsk, isVideo=True)
 
         Asker.report(P_score, W_score)
         self.Tester.results.save(self.name)
