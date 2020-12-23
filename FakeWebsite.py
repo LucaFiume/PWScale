@@ -82,7 +82,7 @@ class FakeWebsite: #This class should be the one calling the asker function
         questions = toAsk
         answers = Asker.ask(questions)
 
-        # CONNECTION WITH THE BACKEND: answers is a list of integers in [0, 1, 2, 3, 4]
+        # CONNECTION WITH THE BACKEND: now, answers is a list of integers from 0 to 10
         P_score, W_score = self.Tester.receive(answers, toAsk, isVideo=True)
 
         Asker.report(P_score, W_score)

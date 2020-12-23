@@ -63,10 +63,10 @@ class Tester:
         else:
             if len(answersP) > 0:
                 self.P.received = answersP
-                self.P.update_score()
+                self.P.update_score(continuous=True)
             if len(answersW) > 0:
                 self.W.received = answersW
-                self.W.update_score()
+                self.W.update_score(continuous=True)
 
         if not(isVideo):
             return self.P.score, self.W.score
@@ -216,10 +216,11 @@ class Scale:
         #This invokes the class StoreResults, in charge of writing up the results
         self.results = results
 
-    def update_score(self):
+    def update_score(self, continuous=False, base=10):
         """This generic function is in charge of updating the user's current P or W score, taking into account all previous
         answers and their respective weights.
-        answer: integer in [0, 1, 2, 3, 4], representing the user's latest answer
+        answer: integer in [0, 1, 2, 3, 4], representing the user's latest answer.
+        if continuous is True, answer is an integer between 0 and 4
         weight: float representing the weight of the last question answered
         lowbound: Scale value of the answer corresponding to a 0
         highbound: Scale value of the answer corresponding to a 4"""
@@ -228,7 +229,10 @@ class Scale:
             lowbound = self.sentLow[i]
             highbound = self.sentHigh[i]
             weight = self.sentWeights[i]
-            answer = np.linspace(lowbound, highbound, 5)[answer]
+            if continuous:
+                answer = (answer / base) * highbound + lowbound
+            else:
+                answer = np.linspace(lowbound, highbound, 5)[answer]
             self.answers.append(answer)
             self.weights.append(weight)
 
