@@ -7,7 +7,7 @@ class Asker:
     def __init__(self):
         self.q = 1
 
-    def ask(self, questions):
+    def ask(self, questions, continuous=False):
         if type(questions) != list:
             questions = [questions]
 
@@ -17,15 +17,26 @@ class Asker:
             print(f'Question #{self.q}: ' + q)
             valid = False
             while not valid:
-                answer = input(' Enter 0, 1, 2, 3, or 4: \n')
+                if continuous:
+                    answer = input(' Enter a number from 0 to 10: \n')
+                    answer = float(answer)
+                else:
+                    answer = input(' Enter 0, 1, 2, 3, or 4: \n')
+
                 try:
-                    t = int(answer)
-                    if t in [0, 1, 2, 3, 4]:
+                    if continuous and (answer >= 0 and answer <= 10):
                         valid = True
+                    elif not(continuous):
+                        t = int(answer)
+                        if t in [0, 1, 2, 3, 4]:
+                            valid = True
                 except:
                     valid = False
             self.q += 1
-            answers.append(int(answer))
+            if continuous:
+                answers.append(answer)
+            else:
+                answers.append(int(answer))
         return answers
 
     def report(self, p, w):
@@ -80,7 +91,7 @@ class FakeWebsite: #This class should be the one calling the asker function
 
         # CONNECTION WITH FRONTEND: toAsk is a list of Question IDs to be asked
         questions = toAsk
-        answers = Asker.ask(questions)
+        answers = Asker.ask(questions, continuous=True)
 
         # CONNECTION WITH THE BACKEND: now, answers is a list of integers from 0 to 10
         P_score, W_score = self.Tester.receive(answers, toAsk, isVideo=True)
