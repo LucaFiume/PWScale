@@ -3,7 +3,7 @@ import pandas as pd
 from Scale import Mapper, Scale, StoreResults
 
 class Tester:
-    def __init__(self, numQs=15, batch=1, loadQs=True, bounds=[-100, 100], storeResults=True):
+    def __init__(self, numQs=15, batch=1, loadQs=True, bounds=[-100, 100], storeResults=False):
         # self.user_interface = user_interface #User interface to invoke in order to ask questions
         self.batch = batch #This number specifies the number of questions to be selected at once
         self.numQs = numQs #Maximum number of questions for P or W

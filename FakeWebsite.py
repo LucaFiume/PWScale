@@ -3,6 +3,7 @@ import pandas as pd
 from Visualizations import PWScalePlotter
 import matplotlib.pyplot as plt
 
+
 class Asker:
     def __init__(self):
         self.q = 1
@@ -24,9 +25,9 @@ class Asker:
                     answer = input(' Enter 0, 1, 2, 3, or 4: \n')
 
                 try:
-                    if continuous and (answer >= 0 and answer <= 10):
+                    if continuous and answer >= 0 and answer <= 10:
                         valid = True
-                    elif not(continuous):
+                    elif not continuous:
                         t = int(answer)
                         if t in [0, 1, 2, 3, 4]:
                             valid = True
@@ -42,7 +43,9 @@ class Asker:
     def report(self, p, w):
         print('FINAL RESULTS: P: ' + str(round(p, 3)) + ' - W: ' + str(round(w, 3)))
 
-class FakeWebsite: #This class should be the one calling the asker function
+
+class FakeWebsite:
+    # This class should be the one calling the asker function
     def __init__(self, Asker):
         print('WELCOME TO THE ITERATIVE PWSCALE TEST')
         # self.name = input('Please enter your full name.\n')
