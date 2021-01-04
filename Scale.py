@@ -44,11 +44,11 @@ class Scale:
         #This invokes the class StoreResults, in charge of writing up the results
         self.results = results
 
-    def update_score(self, continuous=False, base=10):
+    def update_score(self, continuous=False, base=4):
         """This generic function is in charge of updating the user's current P or W score, taking into account all previous
         answers and their respective weights.
         answer: integer in [0, 1, 2, 3, 4], representing the user's latest answer.
-        if continuous is True, answer is an integer between 0 and 4
+        if continuous is True, answer is an integer between 0 and base
         weight: float representing the weight of the last question answered
         lowbound: Scale value of the answer corresponding to a 0
         highbound: Scale value of the answer corresponding to a 4"""
