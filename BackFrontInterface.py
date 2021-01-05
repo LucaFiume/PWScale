@@ -14,12 +14,11 @@ should be used as follows:
     IDs of the initial battery of questions.
 2. Then, start the dynamic part of the test, given the answers to the static part of the test. This is done by calling
     'http://.../start-dynamic?id=...' from the test frontend. This method takes as input a list of answers, each encoded
-    as a whole number from 0 to 4, and returns the question ID of the next question to be asked, and a boolean value
-    indicating whether the test is finished.
+    as a whole number from 0 to 4, and returns the question ID of the next question to be asked.
 3. For the remaining questions of the dynamic part of the test, the method called with 'http://.../next-dynamic?id=...'
     is used. Here, the frontend inputs the answer of the previous dynamic question, expressed as a list containing a whole
-    number ranging from 0 to 4, and returns the question ID of the next question to be asked, and a boolean value
-    indicating whether the test is finished. The frontend should call this method iteratively until this boolean value is TRUE
+    number ranging from 0 to 4, and returns the question ID of the next question to be asked. 
+    The frontend should call this method iteratively until the next question to be asked is None.
 4. Once the dynamic part of the video is done, a set of videos associated to the resulting score are displayed. Thus, when
     calling 'http://.../videos?id=...', the corresponding method ouputs the video IDs corresponding to the videos to be shown.
 5. Lastly, once the user's answers to the presented videos is received, the method attached to 'http://.../final-report'
@@ -50,7 +49,7 @@ def start_dynamic():
     answers = request.json
     _, _ = test.receive(answers, asked, isSA=True)
     questionsAsked[user_id], finished[user_id] = test.test_core_emmit(previous, count)
-    return jsonify(questionsAsked[user_id]), jsonify(finished[user_id])
+    return jsonify(questionsAsked[user_id])
 
 
 @app.route('/next-dynamic')
@@ -59,19 +58,18 @@ def next_dynamic():
     test = testers[user_id]
     asked = questionsAsked[user_id]
 
-    if len(asked) > 0:
+    if len(asked) > 0 and not finished[user_id]:
         answers = request.json
         count = questionCount[user_id]
 
         _, _ = test.receive(answers, asked, count)
         questionCount[user_id] += 1
+        previousType[user_id] = asked[-1][0]
 
     count = questionCount[user_id]
-    previousType[user_id] = asked[-1][0]
     previous = previousType[user_id]
     questionsAsked[user_id], finished[user_id] = test.test_core_emmit(previous, count)
-
-    return jsonify(questionsAsked[user_id]), jsonify(finished[user_id])
+    return jsonify(questionsAsked[user_id])
 
 
 @app.route('/videos')
