@@ -50,14 +50,14 @@ class FakeWebsite:
         print('WELCOME TO THE ITERATIVE PWSCALE TEST')
         # self.name = input('Please enter your full name.\n')
         self.name = 'test'
-        self.qs = pd.ExcelFile('Questions.xlsx')
+        self.qs = pd.ExcelFile('Questions.xlsx', engine='openpyxl')
 
         cols = ['Question ID', 'Question']
         self.questions = pd.read_excel(self.qs, 'SA')  # Dataframe with Self-assessment questions
         self.questions = self.questions[cols].append(pd.read_excel(self.qs, 'P')[cols], ignore_index=True)  # Dataframe with P-related questions
         self.questions = self.questions[cols].append(pd.read_excel(self.qs, 'W')[cols], ignore_index=True)  # Dataframe with W-related questions
 
-        self.Tester = Tester()
+        self.Tester = Tester(storeResults=True)
 
         # CONNECTION WITH THE BACKEND: Extract questions to be asked
         print('INITIAL SELF-ASSESSMENT')

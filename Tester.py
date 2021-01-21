@@ -16,7 +16,7 @@ class Tester:
             self.results = None
 
         if loadQs:
-            self.qs = pd.ExcelFile('Questions.xlsx')
+            self.qs = pd.ExcelFile('Questions.xlsx', engine='openpyxl')
             self.SA_questions = pd.read_excel(self.qs, 'SA') #Dataframe with Self-assessment questions
             self.P_questions = pd.read_excel(self.qs, 'P') #Dataframe with P-related questions
             self.W_questions = pd.read_excel(self.qs, 'W') #Dataframe with W-related questions
