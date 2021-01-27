@@ -20,7 +20,7 @@ class Tester:
 
         if load_questions:
             self.qs = pd.ExcelFile('Questions.xlsx', engine='openpyxl')
-            self.sa_questions = pd.read_excel(self.qs, 'self_assessment_questions')  # Dataframe with Self-assessment questions
+            self.sa_questions = pd.read_excel(self.qs, 'SA')  # Dataframe with Self-assessment questions
             self.p_questions = pd.read_excel(self.qs, 'P')  # Dataframe with P-related questions
             self.w_questions = pd.read_excel(self.qs, 'W')  # Dataframe with W-related questions
 
@@ -147,7 +147,7 @@ class Tester:
 
         scales = [self.P, self.W]
         to_ask = []
-        checkpoints = self.mapper.front_to_back([i for i in range(1, 11)])
+        checkpoints = self.mapper.front_to_back(np.linspace(1, 10, 4))
 
         for i, s in enumerate(scales):
             base = np.argmin(abs(checkpoints - s.score))
@@ -162,15 +162,16 @@ class Tester:
                 else:
                     other = checkpoints[base + 1]
 
-            base = self.mapper.back_to_front(checkpoints[base])
-            other = self.mapper.back_to_front(other)
+            base_front = self.mapper.back_to_front(checkpoints[base])
+            other_front = self.mapper.back_to_front(other)
+            base = checkpoints[base]
 
             if i == 0:
                 title = 'Video_P_'
             else:
                 title = 'Video_W'
 
-            qid = title + str(min(other, base)) + '-' + str(max(other, base))
+            qid = title + str(min(other_front, base_front)) + '-' + str(max(other_front, base_front))
             weight = video_weight
             low_bound = min(other, base)
             high_bound = max(other, base)

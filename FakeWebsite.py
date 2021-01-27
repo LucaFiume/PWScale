@@ -56,7 +56,7 @@ class FakeWebsite:
 
         cols = ['Question ID', 'Question']
         # Dataframe with Self-assessment questions
-        self.questions = pd.read_excel(self.qs, 'self_assessment_questions')
+        self.questions = pd.read_excel(self.qs, 'SA')
         # Dataframe with P-related questions
         self.questions = self.questions[cols].append(pd.read_excel(self.qs, 'P')[cols], ignore_index=True)
         # Dataframe with W-related questions

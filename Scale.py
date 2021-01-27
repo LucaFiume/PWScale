@@ -73,7 +73,7 @@ class Scale:
             if self.results is not None:
                 sent = self.sent[i]
 
-                if 'self_assessment_questions' in sent:
+                if 'SA' in sent:
                     question = self.sa_questions.loc[self.sa_questions['Question ID'] == sent, ['Question']].values[0][0]
                 elif 'Video' in sent:
                     question = sent
@@ -185,12 +185,14 @@ class Scale:
                 delta_std_converged = True
         return delta_std_converged
 
-    def update_sent(self, qid, weight, lowbound, highbound):
-        """This function simply updates all the 'sent' attributes of the class"""
+    def update_sent(self, qid, weight, low_bound, high_bound):
+        """This function simply updates all the 'sent' attributes of the class
+        high_bound and low_bound must be specified in the backend scale"""
+
         self.sent.append(qid)
         self.sent_weights.append(weight)
-        self.sentLow.append(lowbound)
-        self.sentHigh.append(highbound)
+        self.sentLow.append(low_bound)
+        self.sentHigh.append(high_bound)
 
 
 class Mapper:
@@ -233,7 +235,7 @@ class Mapper:
         try:
             y = max(y, self.back_bounds[0])
             y = min(y, self.back_bounds[1])
-        except TypeError:
+        except ValueError:
             for i, e in enumerate(y):
                 y[i] = max(min(e, self.back_bounds[1]), self.back_bounds[0])
 
