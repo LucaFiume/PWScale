@@ -2,145 +2,152 @@ import numpy as np
 import pandas as pd
 from Scale import Mapper, Scale, StoreResults
 
-class Tester:
-    def __init__(self, numQs=15, batch=1, loadQs=True, bounds=[-100, 100], storeResults=False):
-        # self.user_interface = user_interface #User interface to invoke in order to ask questions
-        self.batch = batch #This number specifies the number of questions to be selected at once
-        self.numQs = numQs #Maximum number of questions for P or W
-        self.mapper = Mapper(backBounds=bounds) #Mapper object translating between the backend scale [-100, 100] and the frontend scale [1,4]
-        self.storeResults = storeResults #Boolean indicating whether an excel file containing all results must be created
 
-        if self.storeResults:
+class Tester:
+    def __init__(self, max_questions=15, batch=1, load_questions=True, store_results=False):
+        # self.user_interface = user_interface #User interface to invoke in order to ask questions
+        self.batch = batch  # This number specifies the number of questions to be selected at once
+        self.max_questions = max_questions  # Maximum number of questions for P or W
+        self.mapper = Mapper()
+        # Mapper object translating between the backend scale [-100, 100] and the frontend scale [1,10]
+        self.store_results = store_results
+        # Boolean indicating whether an excel file containing all results must be created
+
+        if self.store_results:
             self.results = StoreResults(self.mapper)
         else:
             self.results = None
 
-        if loadQs:
+        if load_questions:
             self.qs = pd.ExcelFile('Questions.xlsx', engine='openpyxl')
-            self.SA_questions = pd.read_excel(self.qs, 'SA') #Dataframe with Self-assessment questions
-            self.P_questions = pd.read_excel(self.qs, 'P') #Dataframe with P-related questions
-            self.W_questions = pd.read_excel(self.qs, 'W') #Dataframe with W-related questions
+            self.sa_questions = pd.read_excel(self.qs, 'self_assessment_questions')  # Dataframe with Self-assessment questions
+            self.p_questions = pd.read_excel(self.qs, 'P')  # Dataframe with P-related questions
+            self.w_questions = pd.read_excel(self.qs, 'W')  # Dataframe with W-related questions
 
-            #Check scales in which these questions work and switch them to the backend scale
-            for questions in [self.SA_questions, self.P_questions, self.W_questions]:
+            # Check scales in which these questions work and switch them to the backend scale
+            for questions in [self.sa_questions, self.p_questions, self.w_questions]:
                 for field in ['Suited for', 'Strongly Disagree', 'Strongly Agree']:
                     scale = self.mapper.which_scale(questions[field])
                     if scale == 1:
                         transformed = self.mapper.front_to_back(questions[field])
                         questions[field] = transformed
 
-        self.P = Scale(self.P_questions, self.SA_questions, batch=batch, bounds=bounds, battery=len(self.SA_questions), results=self.results)
-        self.W = Scale(self.W_questions, self.SA_questions, batch=batch, bounds=bounds, battery=len(self.SA_questions), results=self.results)
-        self.done = False
+        self.P = Scale(self.p_questions, self.sa_questions, batch=batch, battery=int(len(self.sa_questions) / 2),
+                       results=self.results)
+        self.W = Scale(self.w_questions, self.sa_questions, batch=batch, battery=int(len(self.sa_questions) / 2),
+                       results=self.results)
 
-    def receive(self, answers, toAsk, i=0, check_convergence=10, isSA=False, isVideo=False):
+        # Auxiliary variables for the dynamic part of the test
+        self.done = False  # Indicates convergence of the dynamic part of the test
+        self.dynamic_count = 1  # Number of questions belonging to the dynamic part of the test that have been asked
+        self.previousType = 1  # Scale (P or W) to which the previous question is associated (to alternate)
+
+    def receive(self, answers, to_ask, check_convergence=6, is_self_assessment=False, is_video=False):
         """This function interprets the user responses, taking as input:
-        answers: List of integers in [0, 1, 2, 3, 4], correspoding to the answers to be analyzed
-        toAsk: List of Question IDs to be analyzed
-        isSA: Boolean indicating if these questions correspond to the SA portion
+        answers: List of integers in [0, 1, 2, 3, 4], corresponding to the answers to be analyzed
+        to_ask: List of Question IDs to be analyzed
+        is_self_assessment: Boolean indicating if these questions correspond to the self_assessment_questions portion
         i: Integer corresponding to the number of questions already asked in the dynamic part of the test
         check_convergence: indicates after which question should convergence be checked"""
 
-        answersP = []
-        answersW = []
+        answers_p = []
+        answers_w = []
         for j, a in enumerate(answers):
-            if 'P' in toAsk[j]:
-                answersP.append(a)
+            if 'P' in to_ask[j]:
+                answers_p.append(a)
             else:
-                answersW.append(a)
+                answers_w.append(a)
 
-        if not(isVideo):
-            if len(answersP) > 0 and not(self.P.converged):
-                self.P.received = answersP
+        if not is_video:
+            if len(answers_p) > 0 and not self.P.converged:
+                self.P.received = answers_p
                 self.P.update_score()
-                if not(isSA) and i > check_convergence:
+                if not is_self_assessment and self.dynamic_count > check_convergence:
                     self.P.check_convergence()
 
-            if len(answersW) > 0 and not(self.W.converged):
-                self.W.received = answersW
+            if len(answers_w) > 0 and not self.W.converged:
+                self.W.received = answers_w
                 self.W.update_score()
-                if not(isSA) and i > check_convergence:
+                if not is_self_assessment and self.dynamic_count > check_convergence:
                     self.W.check_convergence()
+
+            if not is_self_assessment:
+                self.dynamic_count += 1
         else:
-            if len(answersP) > 0:
-                self.P.received = answersP
+            if len(answers_p) > 0:
+                self.P.received = answers_p
                 self.P.update_score(continuous=True)
-            if len(answersW) > 0:
-                self.W.received = answersW
+            if len(answers_w) > 0:
+                self.W.received = answers_w
                 self.W.update_score(continuous=True)
 
-        if not(isVideo):
-            return self.P.score, self.W.score
-        else:
-            return self.mapper.back_to_front(self.P.score), self.mapper.back_to_front(self.W.score)
+        return self.mapper.back_to_front(self.P.score), self.mapper.back_to_front(self.W.score)
 
     def self_assessment_emmit(self):
         """This function starts with the self-assessment part of the test, updating the user's P/W scores accordingly"""
-        toAsk = []
-        for i in range(len(self.SA_questions)):
-            QID = self.SA_questions.iloc[i]['Question ID']
-            # question = self.SA_questions.iloc[i]['Question']
-            scale = self.SA_questions.iloc[i]['P/W']
-            weight = self.SA_questions.iloc[i]['Weight']
+        to_ask = []
+        for i in range(len(self.sa_questions)):
+            qid = self.sa_questions.iloc[i]['Question ID']
+            # question = self.sa_questions.iloc[i]['Question']
+            scale = self.sa_questions.iloc[i]['P/W']
+            weight = self.sa_questions.iloc[i]['Weight']
 
-            #There has to be a coordination between the question database and the class Scale definition. Both have to work with the same scale!
-            lowbound = self.SA_questions.iloc[i]['Strongly Disagree']
-            highbound = self.SA_questions.iloc[i]['Strongly Agree']
+            # There has to be a coordination between the question database and the class Scale definition.
+            # Both have to work with the same scale!
+            low_bound = self.sa_questions.iloc[i]['Strongly Disagree']
+            high_bound = self.sa_questions.iloc[i]['Strongly Agree']
 
             if scale == 'P':
-                self.P.update_sent(QID, weight, lowbound, highbound)
+                self.P.update_sent(qid, weight, low_bound, high_bound)
             else:
-                self.W.update_sent(QID, weight, lowbound, highbound)
+                self.W.update_sent(qid, weight, low_bound, high_bound)
 
-            toAsk.append(QID)
+            to_ask.append(qid)
 
-        return toAsk #List of Question IDs to be asked
+        return to_ask  # List of Question IDs to be asked
 
-    def test_core_emmit(self, previousType, i=1):
-        """Dynamic part of the test. check_convergence indicates after which question should convergence be checked
-        previousType is a string indicating whether the previously asked question was P or W scale. Can be 'P' or 'W'"""
+    def test_core_emmit(self):
+        """Dynamic part of the test. """
 
-        toAsk = [] #List of question IDs to be asked next
-
-        if previousType == 'W':
-            previousType = 1
-        else:
-            previousType = 0
+        to_ask = []  # List of question IDs to be asked next_question
 
         scales = [self.P, self.W]
         converged = [self.P.converged, self.W.converged]
 
-        if sum(converged) == 2 or i > 2 * self.numQs:
+        if sum(converged) == 2 or self.dynamic_count > 2 * self.max_questions:
             self.done = True
         else:
-            if converged[0] and previousType == 1:
-                scale = scales[1]
-            elif converged[1] and previousType == 0:
-                scale = scales[0]
+            if converged[0] and self.previousType == 1:
+                self.previousType = 1
+            elif converged[1] and self.previousType == 0:
+                self.previousType = 0
             else:
-                scale = scales[int(not(previousType))]
+                self.previousType = int(not self.previousType)
+            scale = scales[self.previousType]
 
-            next = scale.next_question()
-            if next is not None:
-                QID, question, weight, lowbound, highbound = scale.question_info(next)
-                scale.update_sent(QID, weight, lowbound, highbound)
-                toAsk.append(QID)
+            next_question = scale.next_question()
+            if next_question is not None:
+                qid, question, weight, low_bound, high_bound = scale.question_info(next_question)
+                scale.update_sent(qid, weight, low_bound, high_bound)
+                to_ask.append(qid)
+
             else:
                 self.done = True
 
-        return toAsk, self.done
+        return to_ask, self.done
 
-    def video_emmit(self, videoWeight=5):
+    def video_emmit(self, video_weight=5):
         """This function emulates what test_core_emmit and self_assessment_emmit do, but instead 'invents' a question ID
-        corresponding to the appropriate end videos corresponding to the user's test score. The user will be shown two videos
-        corresponding to the upper and lower integer values in the scale. If score is 2.5, videos for 2 and 3 will be shown.
+        corresponding to the appropriate end videos corresponding to the user's test score. The user will be shown two
+        videos corresponding to the upper and lower integer values in the scale. If score is 2.5, videos for 2 and 3
+        will be shown.
         For the input:
-        videoWeight: This shows the weight associated to the user's answer to the videos shown. Note that this answer
+        video_weight: This shows the weight associated to the user's answer to the videos shown. Note that this answer
         will be treated as any other question of the test."""
 
         scales = [self.P, self.W]
-        toAsk = []
-        checkpoints = self.mapper.front_to_back([i for i in range(1, 5)])
+        to_ask = []
+        checkpoints = self.mapper.front_to_back([i for i in range(1, 11)])
 
         for i, s in enumerate(scales):
             base = np.argmin(abs(checkpoints - s.score))
@@ -163,13 +170,11 @@ class Tester:
             else:
                 title = 'Video_W'
 
-            QID = title + str(min(other, base)) + '-' + str(max(other, base))
-            weight = videoWeight
-            lowbound = min(other, base)
-            highbound = max(other, base)
-            s.update_sent(QID, weight, lowbound, highbound)
-            toAsk.append(QID)
+            qid = title + str(min(other, base)) + '-' + str(max(other, base))
+            weight = video_weight
+            low_bound = min(other, base)
+            high_bound = max(other, base)
+            s.update_sent(qid, weight, low_bound, high_bound)
+            to_ask.append(qid)
 
-        return toAsk
-
-
+        return to_ask

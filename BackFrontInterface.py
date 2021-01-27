@@ -47,7 +47,7 @@ def start_dynamic():
 
     # Still unclear how answers are inputted/encoded here
     answers = request.json
-    _, _ = test.receive(answers, asked, isSA=True)
+    _, _ = test.receive(answers, asked, is_self_assessment=True)
     questionsAsked[user_id], finished[user_id] = test.test_core_emmit(previous, count)
     return jsonify(questionsAsked[user_id])
 
@@ -86,7 +86,7 @@ def report():
     test = testers[user_id]
     asked = questionsAsked[user_id]
     answers = request.json
-    p_score, w_score = test.receive(answers, asked, isVideo=True)
+    p_score, w_score = test.receive(answers, asked, is_video=True)
 
     del testers[user_id]
     del questionsAsked[user_id]
