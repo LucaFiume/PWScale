@@ -75,7 +75,6 @@ class FakeWebsite:
         # CONNECTION WITH THE BACKEND: answers is a list of integers in [0, 1, 2, 3, 4]
         _, _ = self.tester.receive(answers, to_ask, is_self_assessment=True)
 
-        print('TEST')
         done = False
         while not done:
             # CONNECTION WITH THE BACKEND: Extract questions to be asked
